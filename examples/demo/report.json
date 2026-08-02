@@ -1,0 +1,59 @@
+{
+  "tool": "blameshift",
+  "version": "0.1.0",
+  "metric": "latency (ms)",
+  "samples": 400,
+  "range_utc": [
+    "2026-01-05 00:00 UTC",
+    "2026-01-06 09:15 UTC"
+  ],
+  "change_points": [
+    {
+      "index": 240,
+      "timestamp": 1767643200.0,
+      "time_utc": "2026-01-05 20:00 UTC",
+      "direction": "regression",
+      "effect_ms": 31.1595,
+      "effect_pct": 15.8698,
+      "confidence": 0.8231,
+      "z": 27.925,
+      "median_before_ms": 196.3448,
+      "median_after_ms": 227.5043,
+      "persistence": 1.0,
+      "persist_count": 25,
+      "window": 25,
+      "attribution": {
+        "change_id": "deploy-482",
+        "kind": "deploy",
+        "title": "switch checkout to new inventory client",
+        "author": "alex.kim",
+        "dt_seconds": 2220.0,
+        "score": 0.7464,
+        "score_breakdown": {
+          "temporal": 0.4512,
+          "effect": 0.0952,
+          "persistence": 0.2
+        },
+        "rationale": "deploy deploy-482 (\"switch checkout to new inventory client\", by alex.kim) landed 37 minutes before a +15.9% median shift (196ms -> 228ms) that persisted across all 25 subsequent samples. Blame score 0.75: temporal proximity dominates because the change landed inside the lookback window closest to the shift."
+      },
+      "suspects": [
+        {
+          "change_id": "deploy-482",
+          "kind": "deploy",
+          "title": "switch checkout to new inventory client",
+          "author": "alex.kim",
+          "dt_seconds": 2220.0,
+          "score": 0.7464
+        },
+        {
+          "change_id": "deploy-479",
+          "kind": "deploy",
+          "title": "enable new recommendation model (shadow)",
+          "author": "priya.nair",
+          "dt_seconds": 108000.0,
+          "score": 0.2986
+        }
+      ]
+    }
+  ]
+}

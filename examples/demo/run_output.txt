@@ -1,0 +1,20 @@
+blameshift: 400 samples, 2026-01-05 00:00 UTC -> 2026-01-06 09:15 UTC
+metric: latency (ms)
+
+Detected 1 change point(s):
+  #  time                  direction       effect   effect%   conf  top suspect
+-------------------------------------------------------------------------------
+  1  2026-01-05 20:00 UTC  regression      +31.2ms    +15.9%   0.82  deploy-482 (score 0.75)
+
+[change point 1] 2026-01-05 20:00 UTC — regression
+  median 196.3ms -> 227.5ms (+15.9%), z=27.9, persistence 25/25
+  evidence card:
+    suspect : deploy-482 — switch checkout to new inventory client (deploy)
+    author  : alex.kim
+    score   : 0.75 (temporal 0.45 + effect 0.10 + persistence 0.20)
+    why     : deploy deploy-482 ("switch checkout to new inventory client", by alex.kim) landed 37 minutes before a +15.9% median shift (196ms -> 228ms) that persisted across all 25 subsequent samples. Blame score 0.75: temporal proximity dominates because the change landed inside the lookback window closest to the shift.
+  other candidates:
+    deploy-479 (score 0.30, 30.0 hours before)
+
+wrote examples/demo/report.json
+wrote examples/demo/report.html
