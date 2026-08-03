@@ -3,7 +3,7 @@
 **Find the change that broke your latency.** `blameshift` takes a latency time
 series (CI benchmark history, a prod metrics export) plus a change log
 (deploys, commits, config edits), detects where the latency distribution
-shifted, and ranks which recorded change most likely caused each regression —
+shifted, and ranks which recorded change most likely caused each regression,
 emitting an evidence card per regression with before/after statistics and a
 plain-English rationale.
 
@@ -17,7 +17,7 @@ error-prone, and usually happens while the regression is still burning.
 `blameshift` automates the first pass: point it at the series and the change
 log, and get a short, ranked, evidence-backed suspect list in seconds.
 
-Clean-room implementation. Inspired by production performance work at scale;
+Clean-room implementation. Inspired by production performance work;
 all code and data here are original and synthetic.
 
 ## Quickstart
@@ -61,14 +61,14 @@ wrote examples/demo/report.html
 ```
 
 The planted shift was at sample 240 (2026-01-05 20:00 UTC), caused by
-`deploy-482` — detected exactly, blamed correctly, and the in-window decoy
+`deploy-482`, detected exactly, blamed correctly, and the in-window decoy
 `deploy-479` (30 hours earlier) ranked well below. The HTML report is a
 single self-contained file (inline CSS and SVG, no JavaScript) with the
 series sparkline, the change point marked, and the evidence cards.
 
 ## Input formats
 
-**Series CSV** — header `timestamp,value`, one latency sample (ms) per row.
+**Series CSV**: header `timestamp,value`, one latency sample (ms) per row.
 `timestamp` is epoch seconds or ISO-8601.
 
 ```csv
@@ -77,7 +77,7 @@ timestamp,value
 2026-01-05T00:05:00Z,196.2317
 ```
 
-**Changes JSON** — a list (or an object with a `changes` key) of events:
+**Changes JSON**: a list (or an object with a `changes` key) of events:
 
 ```json
 {"changes": [{"id": "deploy-482", "timestamp": "2026-01-05T19:23:00Z",
@@ -93,8 +93,8 @@ side; at each split the shift is measured as the difference of the two window
 medians, scaled by a pooled MAD (median absolute deviation, with the usual
 1.4826 consistency factor) so the z-score is insensitive to outliers. A split
 becomes a candidate when `|z| >= z_threshold` (default 6.0) and the shift
-persists — at least `min_run` of the following samples stay on the shifted
-side — which is what rejects single-point spikes. Each candidate is then
+persists (at least `min_run` of the following samples stay on the shifted
+side), which is what rejects single-point spikes. Each candidate is then
 confirmed by a one-sided CUSUM from the split onward: the cumulative
 deviation from the pre-shift median must exceed `k * MAD`, so random-walk
 noise cannot pass. Candidates from the same shift merge into one cluster,
@@ -102,8 +102,8 @@ and the change point is placed at the cluster center (the candidate band of
 a real level shift is symmetric around the true boundary).
 
 Blame ranks every recorded change in the lookback window (default 48h) before
-a regression by `w1 * exp(-dt/tau) + w2 * effect + w3 * persistence` —
-temporal proximity dominates, scaled by how large and how durable the
+a regression by `w1 * exp(-dt/tau) + w2 * effect + w3 * persistence`.
+Temporal proximity dominates, scaled by how large and how durable the
 regression is. If nothing was recorded in the window, the output says
 "unattributed" rather than pointing at a distant event.
 
@@ -192,4 +192,4 @@ python -m pytest -q
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Raul Tinajero Olivas.
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Raul Tinajero Olivas.
