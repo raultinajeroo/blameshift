@@ -167,3 +167,72 @@ def test_custom_window_and_threshold_flags(tmp_path, capsys):
     ])
     assert rc == 0
     assert "Detected 1 change point(s)" in capsys.readouterr().out
+
+
+def test_run_too_few_samples_exit_2_with_remedy(tmp_path, capsys):
+    series = tmp_path / "short.csv"
+    series.write_text("timestamp,value\n" + "\n".join(
+        f"{1_767_657_600.0 + i * 300},200.0" for i in range(30)
+    ) + "\n")
+    changes = tmp_path / "changes.json"
+    changes.write_text('{"changes": []}')
+
+    rc = main(["run", "--series", str(series), "--changes", str(changes)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "too few" in err
+    assert "--window" in err  # remedy hint
+
+
+def test_run_empty_changes_notes_unattributed(tmp_path, capsys):
+    demo = tmp_path / "demo"
+    assert main(["simulate", "--out", str(demo), "--points", "400", "--seed", "7"]) == 0
+    capsys.readouterr()
+    empty = tmp_path / "empty.json"
+    empty.write_text('{"changes": []}')
+
+    rc = main([
+        "run",
+        "--series", str(demo / "series.csv"),
+        "--changes", str(empty),
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "no changes" in captured.err  # remedy note on stderr
+    assert "unattributed" in captured.out
+
+
+def test_fail_on_regression_exit_1(tmp_path, capsys):
+    demo = tmp_path / "demo"
+    assert main(["simulate", "--out", str(demo), "--points", "400", "--seed", "7"]) == 0
+    capsys.readouterr()
+
+    rc = main([
+        "run",
+        "--series", str(demo / "series.csv"),
+        "--changes", str(demo / "changes.json"),
+        "--fail-on-regression",
+    ])
+    assert rc == 1
+    assert "--fail-on-regression" in capsys.readouterr().err
+
+
+def test_pr_comment_written(tmp_path, capsys):
+    demo = tmp_path / "demo"
+    assert main(["simulate", "--out", str(demo), "--points", "400", "--seed", "7"]) == 0
+    capsys.readouterr()
+    comment = tmp_path / "comment.md"
+
+    rc = main([
+        "run",
+        "--series", str(demo / "series.csv"),
+        "--changes", str(demo / "changes.json"),
+        "--pr-comment", str(comment),
+    ])
+    assert rc == 0
+    text = comment.read_text()
+    assert "blameshift" in text
+    assert "deploy-482" in text
+    assert "confidence" in text
+    assert "other candidates" in text
+    assert "these two input files only" in text  # numbers labeled by source

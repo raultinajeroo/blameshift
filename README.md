@@ -66,6 +66,47 @@ The planted shift was at sample 240 (2026-01-05 20:00 UTC), caused by
 single self-contained file (inline CSS and SVG, no JavaScript) with the
 series sparkline, the change point marked, and the evidence cards.
 
+## Use in CI (GitHub Action)
+
+From clone to a PR comment in about ten minutes:
+
+1. Fork or clone this repo and open a test PR — the bundled workflow
+   `.github/workflows/blameshift-demo.yml` runs the action on the
+   fixture-derived demo data in `examples/demo/` and posts the result as a
+   PR comment. It never fails the build (`fail-on-regression` defaults to
+   off).
+2. To point it at your own data, export a benchmark history
+   (`timestamp,value` CSV) and a change log (deploys/commits JSON) in your
+   pipeline, then:
+
+```yaml
+      - uses: raultinajeroo/blameshift@main
+        with:
+          series: series.csv
+          changes: changes.json
+```
+
+The action posts one comment per PR: detected change points with effect
+size and confidence, the top suspect with its evidence-card rationale,
+and other candidates. JSON and HTML reports are uploaded as workflow
+artifacts. Inputs, outputs, and the full example are in
+[docs/ACTION.md](docs/ACTION.md).
+
+## Evaluating the detector
+
+`blameshift eval` scores the pipeline against the labeled synthetic corpus
+in `eval/cases` (planted regressions, benign series, and an unattributable
+case; rebuildable via `eval/build_cases.py`):
+
+```bash
+blameshift eval --cases eval/cases
+```
+
+It reports precision@1, false-positive rate, mean detection delay, and
+unattributed rate. All four numbers describe this small synthetic corpus
+only (six cases; see `eval/README.md`) — they are a smoke check on the
+pipeline, not a benchmark of real-world accuracy.
+
 ## Input formats
 
 **Series CSV**: header `timestamp,value`, one latency sample (ms) per row.
@@ -168,9 +209,14 @@ no change was recorded in the lookback window.
 | `--cusum-k` | 8.0 | CUSUM confirmation depth, in units of MAD |
 | `--lookback-hours` | 48 | how far before a regression to look for causes |
 | `--tau-hours` | 6 | decay constant of the temporal proximity term |
+| `--pr-comment PATH` | off | also write a markdown PR-comment summary |
+| `--fail-on-regression` | off | exit 1 when a regression is detected |
 
-Exit codes: `0` on success (including "no change points found"), `2` on
-invalid input.
+Exit codes: `0` on success (including "no change points found"), `1` when
+`--fail-on-regression` is set and a regression is detected, `2` on invalid
+input. Error messages name the file, the location of the problem, and what
+to fix (a missing file suggests generating demo data; a too-short series
+tells you the minimum length for the chosen `--window`).
 
 ## Development
 
