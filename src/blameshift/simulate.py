@@ -33,9 +33,22 @@ BASELINE_MS = 200.0
 class SimulationResult:
     points: list[SeriesPoint]
     events: list[ChangeEvent]
-    planted_index: int
-    planted_event_id: str
+    planted_index: int | None       # None for a benign (no-shift) series
+    planted_event_id: str | None    # None when there is no culprit to find
     shift_pct: float
+
+
+def _baseline(points: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    """Shared baseline: mild daily seasonality plus noise, no shift."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(points, dtype=float)
+    # Seasonal amplitude is small enough that the detector at default
+    # thresholds stays silent on it.
+    seasonal = 3.0 * np.sin(2.0 * np.pi * t / 288.0)
+    noise = rng.normal(0.0, 4.0, size=points)
+    values = BASELINE_MS + seasonal + noise
+    timestamps = SERIES_START + t * SAMPLE_INTERVAL_S
+    return values, timestamps
 
 
 def generate(points: int = 400, seed: int = 7) -> SimulationResult:
@@ -43,21 +56,12 @@ def generate(points: int = 400, seed: int = 7) -> SimulationResult:
     if points < 60:
         raise ValueError("points must be >= 60 to fit the demo scenario")
 
-    rng = np.random.default_rng(seed)
+    values, timestamps = _baseline(points, seed)
     n = points
-    t = np.arange(n, dtype=float)
-
-    # Baseline: mild daily seasonality (period = 1 day of 5-min samples)
-    # plus noise. Seasonal amplitude is small enough that the detector at
-    # default thresholds stays silent on it.
-    seasonal = 3.0 * np.sin(2.0 * np.pi * t / 288.0)
-    noise = rng.normal(0.0, 4.0, size=n)
-    values = BASELINE_MS + seasonal + noise
 
     planted_index = int(n * 0.6)
     values[planted_index:] *= REGRESSION_FACTOR
 
-    timestamps = SERIES_START + t * SAMPLE_INTERVAL_S
     series = [
         SeriesPoint(timestamp=float(ts), value=float(v))
         for ts, v in zip(timestamps, values)
@@ -112,6 +116,57 @@ def generate(points: int = 400, seed: int = 7) -> SimulationResult:
     )
 
 
+def generate_benign(points: int = 400, seed: int = 5) -> SimulationResult:
+    """Generate a stationary series with no planted shift.
+
+    Used for false-positive evaluation: the change log still contains
+    plausible events (including one inside the blame lookback window), but
+    the series never shifts, so a correct detector stays silent.
+    """
+    if points < 60:
+        raise ValueError("points must be >= 60 to fit the demo scenario")
+
+    values, timestamps = _baseline(points, seed)
+    series = [
+        SeriesPoint(timestamp=float(ts), value=float(v))
+        for ts, v in zip(timestamps, values)
+    ]
+
+    mid_time = float(timestamps[int(points * 0.6)])
+    events = [
+        ChangeEvent(
+            id="deploy-515",
+            timestamp=mid_time - 40.0 * 3600.0,
+            kind="deploy",
+            title="bump worker pool size",
+            author="mara.osei",
+        ),
+        ChangeEvent(
+            id="commit-77aa01",
+            timestamp=mid_time - 5.0 * 3600.0,
+            kind="commit",
+            title="tidy logging labels",
+            author="jonas.berg",
+        ),
+        ChangeEvent(
+            id="config-130",
+            timestamp=mid_time + 3.0 * 3600.0,
+            kind="config",
+            title="rotate TLS certificates",
+            author="priya.nair",
+        ),
+    ]
+    events.sort(key=lambda e: e.timestamp)
+
+    return SimulationResult(
+        points=series,
+        events=events,
+        planted_index=None,
+        planted_event_id=None,
+        shift_pct=0.0,
+    )
+
+
 def _iso(epoch_seconds: float) -> str:
     return datetime.fromtimestamp(epoch_seconds, timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
@@ -148,7 +203,11 @@ def write_demo(result: SimulationResult, out_dir: str | Path) -> tuple[Path, Pat
     truth_path = out / "truth.json"
     truth_payload = {
         "planted_index": result.planted_index,
-        "planted_time_utc": _iso(result.points[result.planted_index].timestamp),
+        "planted_time_utc": (
+            _iso(result.points[result.planted_index].timestamp)
+            if result.planted_index is not None
+            else None
+        ),
         "planted_event_id": result.planted_event_id,
         "shift_pct": result.shift_pct,
         "note": "answer key for the synthetic demo; not used by `blameshift run`",
