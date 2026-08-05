@@ -8,7 +8,15 @@ import sys
 from . import __version__
 from .blame import attribute
 from .detectors import detect_change_points
-from .report import render_terminal, to_json_dict, write_html, write_json, render_html
+from .eval import eval_to_json, evaluate_cases, render_eval
+from .report import (
+    render_pr_comment,
+    render_terminal,
+    render_html,
+    to_json_dict,
+    write_html,
+    write_json,
+)
 from .series import InputError, load_changes_json, load_series_csv
 from .simulate import generate, write_demo
 
@@ -45,6 +53,34 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--cusum-k", type=float, default=8.0, help="CUSUM confirmation multiplier k (default 8.0)")
     run.add_argument("--lookback-hours", type=float, default=48.0, help="blame lookback window in hours (default 48)")
     run.add_argument("--tau-hours", type=float, default=6.0, help="temporal decay constant in hours (default 6)")
+    run.add_argument(
+        "--pr-comment",
+        dest="pr_comment_out",
+        metavar="PATH",
+        help="also write a markdown PR-comment summary to this path",
+    )
+    run.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="exit 1 if any regression change point is detected (default off)",
+    )
+
+    ev = sub.add_parser(
+        "eval",
+        help="score the pipeline against a directory of labeled cases",
+    )
+    ev.add_argument(
+        "--cases",
+        required=True,
+        help="directory of labeled cases (each: series.csv, changes.json, truth.json)",
+    )
+    ev.add_argument("--json", dest="json_out", help="also write metrics JSON to this path")
+    ev.add_argument("--window", type=int, default=25, help="scan window size n (default 25)")
+    ev.add_argument("--z-threshold", type=float, default=6.0, help="robust z threshold (default 6.0)")
+    ev.add_argument("--min-run", type=int, default=10, help="required persistence in samples (default 10)")
+    ev.add_argument("--cusum-k", type=float, default=8.0, help="CUSUM confirmation multiplier k (default 8.0)")
+    ev.add_argument("--lookback-hours", type=float, default=48.0, help="blame lookback window in hours (default 48)")
+    ev.add_argument("--tau-hours", type=float, default=6.0, help="temporal decay constant in hours (default 6)")
 
     return parser
 
@@ -70,6 +106,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         points = load_series_csv(args.series)
         events = load_changes_json(args.changes)
+        if len(points) < 2 * args.window:
+            raise InputError(
+                f"{args.series}: {len(points)} samples is too few for "
+                f"window={args.window} (need at least {2 * args.window}); "
+                "provide a longer series or lower --window"
+            )
         change_points = detect_change_points(
             points,
             window=args.window,
@@ -80,6 +122,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     except (InputError, ValueError) as exc:
         print(f"blameshift: error: {exc}", file=sys.stderr)
         return 2
+
+    if not events:
+        print(
+            f"blameshift: note: {args.changes} records no changes; any "
+            "regression will be unattributed. Record deploys/commits/config "
+            "edits in the changes file to get blame attribution.",
+            file=sys.stderr,
+        )
 
     attributions = attribute(
         change_points,
@@ -97,7 +147,48 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.html_out:
         write_html(render_html(points, attributions), args.html_out)
         print(f"wrote {args.html_out}")
+    if args.pr_comment_out:
+        comment = render_pr_comment(
+            points,
+            attributions,
+            series_path=args.series,
+            changes_path=args.changes,
+        )
+        with open(args.pr_comment_out, "w", encoding="utf-8") as fh:
+            fh.write(comment + "\n")
+        print(f"wrote {args.pr_comment_out}")
 
+    if args.fail_on_regression and any(
+        cp.direction == "regression" for cp in change_points
+    ):
+        print(
+            "blameshift: regression change point(s) detected and "
+            "--fail-on-regression is set",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def _cmd_eval(args: argparse.Namespace) -> int:
+    try:
+        report = evaluate_cases(
+            args.cases,
+            window=args.window,
+            z_threshold=args.z_threshold,
+            min_run=args.min_run,
+            cusum_k=args.cusum_k,
+            lookback_hours=args.lookback_hours,
+            tau_hours=args.tau_hours,
+        )
+    except (InputError, ValueError) as exc:
+        print(f"blameshift: error: {exc}", file=sys.stderr)
+        return 2
+
+    print(render_eval(report))
+    if args.json_out:
+        write_json(eval_to_json(report), args.json_out)
+        print(f"\nwrote {args.json_out}")
     return 0
 
 
@@ -108,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_simulate(args)
     if args.command == "run":
         return _cmd_run(args)
+    if args.command == "eval":
+        return _cmd_eval(args)
     parser.error("unknown command")  # pragma: no cover
     return 2
 

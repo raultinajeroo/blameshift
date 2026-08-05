@@ -1,0 +1,25 @@
+{
+  "changes": [
+    {
+      "id": "deploy-515",
+      "timestamp": "2026-01-04T04:00:00Z",
+      "kind": "deploy",
+      "title": "bump worker pool size",
+      "author": "mara.osei"
+    },
+    {
+      "id": "commit-77aa01",
+      "timestamp": "2026-01-05T15:00:00Z",
+      "kind": "commit",
+      "title": "tidy logging labels",
+      "author": "jonas.berg"
+    },
+    {
+      "id": "config-130",
+      "timestamp": "2026-01-05T23:00:00Z",
+      "kind": "config",
+      "title": "rotate TLS certificates",
+      "author": "priya.nair"
+    }
+  ]
+}

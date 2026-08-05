@@ -99,7 +99,10 @@ def load_series_csv(path: str | Path) -> list[SeriesPoint]:
     """
     path = Path(path)
     if not path.is_file():
-        raise InputError(f"series file not found: {path}")
+        raise InputError(
+            f"series file not found: {path}; check the path, or generate "
+            "demo data with `blameshift simulate --out DIR`"
+        )
 
     points: list[SeriesPoint] = []
     with path.open(newline="", encoding="utf-8") as fh:
@@ -144,7 +147,10 @@ def load_changes_json(path: str | Path) -> list[ChangeEvent]:
     """Load change events from JSON (a list, or an object with ``changes``)."""
     path = Path(path)
     if not path.is_file():
-        raise InputError(f"changes file not found: {path}")
+        raise InputError(
+            f"changes file not found: {path}; check the path, or generate "
+            "demo data with `blameshift simulate --out DIR`"
+        )
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))

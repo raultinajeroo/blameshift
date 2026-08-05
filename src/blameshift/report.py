@@ -356,3 +356,92 @@ def render_html(
 
 def write_html(content: str, path: str | Path) -> None:
     Path(path).write_text(content, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# PR comment (markdown)
+# ---------------------------------------------------------------------------
+
+def render_pr_comment(
+    points: list[SeriesPoint],
+    attributions: list[Attribution],
+    *,
+    series_path: str,
+    changes_path: str,
+    metric_label: str = "latency (ms)",
+) -> str:
+    """Render a markdown PR comment: change points, blame, evidence cards.
+
+    Every number comes from the two input files named in the footer, which
+    are stated explicitly so the comment can never be mistaken for anything
+    other than this run's inputs.
+    """
+    lines: list[str] = []
+    lines.append("### blameshift: latency change-point triage")
+    lines.append("")
+    cps = [a.change_point for a in attributions]
+    regressions = [cp for cp in cps if cp.direction == "regression"]
+
+    if not cps:
+        lines.append(
+            f"No change points detected in `{series_path}` "
+            f"({len(points)} samples). The series looks stable."
+        )
+    else:
+        lines.append(
+            f"Detected **{len(cps)} change point(s)** "
+            f"({len(regressions)} regression(s)) in "
+            f"{len(points)} samples, {fmt_time(points[0].timestamp)} -> "
+            f"{fmt_time(points[-1].timestamp)}:"
+        )
+        lines.append("")
+        lines.append(
+            "| # | time (UTC) | direction | effect | effect % | confidence | top suspect |"
+        )
+        lines.append("|---|---|---|---|---|---|---|")
+        for n, attr in enumerate(attributions, start=1):
+            cp = attr.change_point
+            top = attr.top_suspect
+            if top is not None:
+                suspect = f"`{top.event.id}` (score {top.score:.2f})"
+            elif attr.unattributed_reason:
+                suspect = "unattributed"
+            else:
+                suspect = "-"
+            lines.append(
+                f"| {n} | {fmt_time(cp.timestamp)} | {cp.direction} | "
+                f"{cp.effect_ms:+.1f}ms | {_fmt_signed_pct(cp.effect_pct)} | "
+                f"{cp.confidence:.2f} | {suspect} |"
+            )
+        lines.append("")
+
+        for n, attr in enumerate(attributions, start=1):
+            cp = attr.change_point
+            lines.append(
+                f"**Change point {n}** — {fmt_time(cp.timestamp)} "
+                f"({cp.direction}, median {cp.median_before:.1f}ms -> "
+                f"{cp.median_after:.1f}ms, z={cp.z:.1f}, "
+                f"persistence {cp.persist_count}/{cp.window})"
+            )
+            if attr.card is not None:
+                card = attr.card
+                lines.append(f"> {card.rationale}")
+            elif attr.unattributed_reason:
+                lines.append(f"> {attr.unattributed_reason}")
+            else:
+                lines.append("> improvement — no blame assigned")
+            if len(attr.suspects) > 1:
+                others = ", ".join(
+                    f"`{s.event.id}` ({s.score:.2f})" for s in attr.suspects[1:4]
+                )
+                lines.append(f"> other candidates: {others}")
+            lines.append("")
+
+    lines.append("---")
+    lines.append(
+        f"<sub>Computed by blameshift {_version()} from `{series_path}` and "
+        f"`{changes_path}` in this CI run ({metric_label}). Numbers describe "
+        "these two input files only. JSON and HTML reports are attached as "
+        "workflow artifacts.</sub>"
+    )
+    return "\n".join(lines)

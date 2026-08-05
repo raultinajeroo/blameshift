@@ -1,0 +1,7 @@
+{
+  "planted_index": 240,
+  "planted_time_utc": "2026-01-05T20:00:00Z",
+  "planted_event_id": "deploy-482",
+  "shift_pct": 14.999999999999991,
+  "note": "answer key for the synthetic demo; not used by `blameshift run`"
+}

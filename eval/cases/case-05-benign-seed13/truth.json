@@ -1,0 +1,7 @@
+{
+  "planted_index": null,
+  "planted_time_utc": null,
+  "planted_event_id": null,
+  "shift_pct": 0.0,
+  "note": "answer key for the synthetic demo; not used by `blameshift run`"
+}

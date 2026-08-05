@@ -1,0 +1,25 @@
+# Example: run blameshift on this repo's bundled demo data for every PR.
+# It analyzes fixture-derived demo inputs (examples/demo/) and comments the
+# result on the PR. It never fails the build: fail-on-regression stays off.
+name: blameshift demo
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Triage latency regression (fixture-derived demo data)
+        uses: ./
+        with:
+          series: examples/demo/series.csv
+          changes: examples/demo/changes.json
+          # fail-on-regression defaults to false: the comment is advisory.
