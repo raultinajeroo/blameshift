@@ -1,0 +1,119 @@
+name: blameshift
+description: >-
+  Detect latency change points and rank which recorded change likely caused
+  each regression. Posts a PR comment with evidence cards and uploads
+  JSON/HTML reports as artifacts. Read-only; never fails the build unless
+  fail-on-regression is set.
+branding:
+  icon: activity
+  color: red
+
+inputs:
+  series:
+    description: Path to the latency series CSV (timestamp,value).
+    required: true
+  changes:
+    description: Path to the change log JSON (deploys, commits, config edits).
+    required: true
+  window:
+    description: Samples on each side of a scanned split.
+    required: false
+    default: "25"
+  z-threshold:
+    description: Robust z-score needed to open a candidate.
+    required: false
+    default: "6.0"
+  min-run:
+    description: Post-shift samples that must stay on the shifted side.
+    required: false
+    default: "10"
+  lookback-hours:
+    description: How far before a regression to look for causes.
+    required: false
+    default: "48"
+  json-out:
+    description: Where to write the JSON report (uploaded as an artifact).
+    required: false
+    default: blameshift-report.json
+  html-out:
+    description: Where to write the HTML report (uploaded as an artifact).
+    required: false
+    default: blameshift-report.html
+  comment:
+    description: Post the summary as a PR comment (pull_request events only).
+    required: false
+    default: "true"
+  fail-on-regression:
+    description: Fail the step when a regression change point is detected.
+    required: false
+    default: "false"
+  python-version:
+    description: Python version used to run blameshift.
+    required: false
+    default: "3.12"
+
+outputs:
+  change-points:
+    description: Number of change points detected.
+    value: ${{ steps.analyze.outputs.change-points }}
+  regressions:
+    description: Number of regression change points detected.
+    value: ${{ steps.analyze.outputs.regressions }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install blameshift
+      shell: bash
+      run: python -m pip install "${{ github.action_path }}"
+
+    - name: Run blameshift
+      id: analyze
+      shell: bash
+      env:
+        FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+      run: |
+        set -euo pipefail
+        extra=""
+        if [ "$FAIL_ON_REGRESSION" = "true" ]; then
+          extra="--fail-on-regression"
+        fi
+        blameshift run \
+          --series "${{ inputs.series }}" \
+          --changes "${{ inputs.changes }}" \
+          --window "${{ inputs.window }}" \
+          --z-threshold "${{ inputs.z-threshold }}" \
+          --min-run "${{ inputs.min-run }}" \
+          --lookback-hours "${{ inputs.lookback-hours }}" \
+          --json "${{ inputs.json-out }}" \
+          --html "${{ inputs.html-out }}" \
+          --pr-comment blameshift-comment.md \
+          $extra
+        python - "${{ inputs.json-out }}" >> "$GITHUB_OUTPUT" <<'EOF'
+        import json, sys
+        doc = json.load(open(sys.argv[1]))
+        cps = doc["change_points"]
+        print(f"change-points={len(cps)}")
+        print(f"regressions={sum(1 for c in cps if c['direction'] == 'regression')}")
+        EOF
+
+    - name: Upload reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: blameshift-reports
+        path: |
+          ${{ inputs.json-out }}
+          ${{ inputs.html-out }}
+          blameshift-comment.md
+
+    - name: Comment on PR
+      if: github.event_name == 'pull_request' && inputs.comment == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh pr comment "${{ github.event.pull_request.number }}" --body-file blameshift-comment.md
