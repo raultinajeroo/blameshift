@@ -15,7 +15,7 @@ at a dashboard, eyeballing the inflection point, and then scrolling through a
 deploy timeline hoping the timestamps line up. That manual hunt is slow,
 error-prone, and usually happens while the regression is still burning.
 `blameshift` automates the first pass: point it at the series and the change
-log, and get a short, ranked, evidence-backed suspect list in seconds.
+log, and get a short, ranked, evidence-backed suspect list in one command.
 
 Clean-room implementation. Inspired by production performance work;
 all code and data here are original and synthetic.
@@ -181,14 +181,8 @@ python -m pytest -q
 
 ## Roadmap
 
-- Seasonality-aware baselines (deseasonalize before scanning, or model the
-  seasonal component explicitly), so strong daily/weekly cycles never
-  approach the threshold.
-- Multi-metric correlation: when p50, p95, and error rate shift together,
-  say so; when only one moves, that is evidence too.
-- Optional LLM narrative hook: feed the evidence cards (structured, local
-  data only) to a user-supplied model endpoint for a richer write-up. The
-  core tool stays offline and deterministic.
+Planned but not-yet-implemented directions live in
+[ROADMAP.md](ROADMAP.md). Nothing there is claimed as working today.
 
 ## License
 
