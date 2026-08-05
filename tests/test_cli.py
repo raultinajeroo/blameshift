@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -167,3 +168,20 @@ def test_custom_window_and_threshold_flags(tmp_path, capsys):
     ])
     assert rc == 0
     assert "Detected 1 change point(s)" in capsys.readouterr().out
+
+
+def test_committed_demo_data_runs_offline(tmp_path, capsys):
+    """The bundled examples/demo fixtures work with no network or API keys."""
+    demo = Path(__file__).resolve().parent.parent / "examples" / "demo"
+    rc = main([
+        "run",
+        "--series", str(demo / "series.csv"),
+        "--changes", str(demo / "changes.json"),
+        "--json", str(tmp_path / "report.json"),
+    ])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Detected 1 change point(s)" in out
+    assert "deploy-482" in out
+    doc = json.loads((tmp_path / "report.json").read_text())
+    assert doc["change_points"][0]["attribution"]["change_id"] == "deploy-482"
