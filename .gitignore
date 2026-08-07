@@ -35,6 +35,8 @@ coverage.xml
 
 # Environments
 .env
+.env.local
+.env.*.local
 .venv
 env/
 venv/
@@ -48,3 +50,7 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+# private working notes
+BACKLOG.md
+ROADMAP.md
