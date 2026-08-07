@@ -17,6 +17,5 @@ labels: enhancement
 
 <!-- Workarounds you use now, or why existing flags do not cover it. -->
 
-Note: check [ROADMAP.md](../../ROADMAP.md) first — the item may already be
-planned. The tool stays offline and deterministic; features requiring live
+Note: the tool stays offline and deterministic; features requiring live
 service integrations are out of scope.

@@ -225,11 +225,6 @@ pip install -e . pytest
 python -m pytest -q
 ```
 
-## Roadmap
-
-Planned but not-yet-implemented directions live in
-[ROADMAP.md](ROADMAP.md). Nothing there is claimed as working today.
-
 ## License
 
 MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Raul Tinajero Olivas.
