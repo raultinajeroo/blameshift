@@ -1,7 +1,8 @@
 """Data model and input loaders for blameshift.
 
-A latency series is an ordered list of :class:`SeriesPoint` (one latency
-sample per timestamp, values in milliseconds). A change log is a list of
+A series is an ordered list of :class:`SeriesPoint` (one numeric sample per
+timestamp, milliseconds by default or YES probabilities in probability mode).
+A change log is a list of
 :class:`ChangeEvent` (deploys, commits, config changes) with timestamps.
 
 Loaders accept:
@@ -31,7 +32,7 @@ class InputError(ValueError):
 
 @dataclass(frozen=True)
 class SeriesPoint:
-    """One latency sample. ``timestamp`` is epoch seconds, ``value`` is ms."""
+    """One sample. ``timestamp`` is epoch seconds; values retain input units."""
 
     timestamp: float
     value: float
@@ -80,20 +81,20 @@ def parse_timestamp(raw: object, *, where: str) -> float:
 
 def _parse_value(raw: object, *, where: str) -> float:
     if isinstance(raw, bool):
-        raise InputError(f"{where}: expected a numeric latency, got {raw!r}")
+        raise InputError(f"{where}: expected a numeric value, got {raw!r}")
     try:
         value = float(raw)  # accepts int/float/numeric strings
     except (TypeError, ValueError):
         raise InputError(
-            f"{where}: cannot parse latency value {raw!r}; expected a number"
+            f"{where}: cannot parse value {raw!r}; expected a number"
         ) from None
     if value != value:  # NaN
-        raise InputError(f"{where}: latency value is NaN")
+        raise InputError(f"{where}: value is NaN")
     return value
 
 
 def load_series_csv(path: str | Path) -> list[SeriesPoint]:
-    """Load a latency series from ``timestamp,value`` CSV.
+    """Load a numeric series from ``timestamp,value`` CSV.
 
     Rows are sorted by timestamp. Timestamps must be unique.
     """

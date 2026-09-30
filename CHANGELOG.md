@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `blameshift run --metric probability` consumes pmwatch midpoint CSVs,
+  validates [0, 1], reports increases/decreases with probability units,
+  and ranks events for both directions as temporal associations. The
+  existing latency mode and JSON fields remain the default.
 - Composite GitHub Action (`action.yml`) wrapping `blameshift run`, with an
   example PR workflow; advisory by default (`fail-on-regression` off).
 - `blameshift run --pr-comment PATH`: markdown PR summary with change

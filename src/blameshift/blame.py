@@ -96,7 +96,8 @@ def format_duration(seconds: float) -> str:
 
 
 def _build_rationale(
-    event: ChangeEvent, cp: ChangePoint, dt_seconds: float, score: float
+    event: ChangeEvent, cp: ChangePoint, dt_seconds: float, score: float,
+    unit: str = "ms",
 ) -> str:
     sign = "+" if cp.effect_ms >= 0 else "-"
     persisted_all = cp.persist_count == cp.window
@@ -106,14 +107,28 @@ def _build_rationale(
         else f"persisted across {cp.persist_count} of {cp.window} "
         "subsequent samples"
     )
+    before = f"{cp.median_before:.0f}ms" if unit == "ms" else format_value(cp.median_before, unit)
+    after = f"{cp.median_after:.0f}ms" if unit == "ms" else format_value(cp.median_after, unit)
+    explanation = (
+        f"Blame score {score:.2f}: temporal proximity dominates because the "
+        "change landed inside the lookback window closest to the shift."
+        if unit == "ms" else
+        f"Event score {score:.2f}: this is a temporal association, not evidence of causality."
+    )
     return (
         f"{event.kind} {event.id} (\"{event.title}\", by {event.author}) "
         f"landed {format_duration(dt_seconds)} before a {sign}{abs(cp.effect_pct):.1f}% "
-        f"median shift ({cp.median_before:.0f}ms -> {cp.median_after:.0f}ms) "
+        f"median shift ({before} -> {after}) "
         f"that {persistence_clause}. "
-        f"Blame score {score:.2f}: temporal proximity dominates because the "
-        f"change landed inside the lookback window closest to the shift."
+        f"{explanation}"
     )
+
+
+def format_value(value: float, unit: str = "ms", *, signed: bool = False) -> str:
+    """Keep small probability changes visible without changing latency output."""
+    precision = 1 if unit == "ms" else 4
+    sign = "+" if signed else ""
+    return f"{value:{sign}.{precision}f}{unit}"
 
 
 def attribute(
@@ -123,12 +138,14 @@ def attribute(
     lookback_hours: float = 48.0,
     tau_hours: float = 6.0,
     weights: tuple[float, float, float] = DEFAULT_WEIGHTS,
+    unit: str = "ms",
 ) -> list[Attribution]:
-    """Rank suspect change events for every regression change point.
+    """Rank events for regressions and neutral increase/decrease change points.
 
     Returns one :class:`Attribution` per change point, in input order.
     Regressions with no events in the lookback window are marked
-    ``unattributed``; improvements carry no suspects at all.
+    ``unattributed``; latency improvements carry no suspects at all.
+    Probability-mode increases and decreases both receive event rankings.
     """
     if tau_hours <= 0:
         raise ValueError("tau_hours must be > 0")
@@ -143,7 +160,7 @@ def attribute(
 
     attributions: list[Attribution] = []
     for cp in change_points:
-        if cp.direction != "regression":
+        if cp.direction not in ("regression", "increase", "decrease"):
             attributions.append(Attribution(change_point=cp))
             continue
 
@@ -202,7 +219,7 @@ def attribute(
             effect_score=top.effect_score,
             persistence_score=top.persistence_score,
             confidence=cp.confidence,
-            rationale=_build_rationale(top.event, cp, top.dt_seconds, top.score),
+            rationale=_build_rationale(top.event, cp, top.dt_seconds, top.score, unit),
         )
         attributions.append(Attribution(change_point=cp, suspects=suspects, card=card))
 

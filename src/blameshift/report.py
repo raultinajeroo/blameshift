@@ -12,9 +12,14 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .blame import Attribution, format_duration
+from .blame import Attribution, format_duration, format_value
 from .detectors import ChangePoint
 from .series import SeriesPoint
+
+PROBABILITY_NOTE = (
+    "Event rankings describe temporal association, not evidence of causality. "
+    "Increases and decreases are changes in quoted YES probability."
+)
 
 
 def fmt_time(epoch_seconds: float) -> str:
@@ -37,6 +42,7 @@ def render_terminal(
     attributions: list[Attribution],
     *,
     metric_label: str = "latency (ms)",
+    unit: str = "ms",
 ) -> str:
     """Render the full analysis as aligned plain text."""
     lines: list[str] = []
@@ -45,6 +51,8 @@ def render_terminal(
         f"{fmt_time(points[0].timestamp)} -> {fmt_time(points[-1].timestamp)}"
     )
     lines.append(f"metric: {metric_label}")
+    if unit != "ms":
+        lines.append(PROBABILITY_NOTE)
     lines.append("")
 
     cps = [a.change_point for a in attributions]
@@ -70,7 +78,7 @@ def render_terminal(
             suspect = "-"
         lines.append(
             f"{n:>3}  {fmt_time(cp.timestamp):<20}  {cp.direction:<11}  "
-            f"{cp.effect_ms:>+8.1f}ms  {_fmt_signed_pct(cp.effect_pct):>8}  "
+            f"{format_value(cp.effect_ms, unit, signed=True):>10}  {_fmt_signed_pct(cp.effect_pct):>8}  "
             f"{cp.confidence:>5.2f}  {suspect}"
         )
     lines.append("")
@@ -79,7 +87,7 @@ def render_terminal(
         cp = attr.change_point
         lines.append(f"[change point {n}] {fmt_time(cp.timestamp)} — {cp.direction}")
         lines.append(
-            f"  median {cp.median_before:.1f}ms -> {cp.median_after:.1f}ms "
+            f"  median {format_value(cp.median_before, unit)} -> {format_value(cp.median_after, unit)} "
             f"({_fmt_signed_pct(cp.effect_pct)}), z={cp.z:.1f}, "
             f"persistence {cp.persist_count}/{cp.window}"
         )
@@ -122,9 +130,11 @@ def to_json_dict(
     attributions: list[Attribution],
     *,
     metric_label: str = "latency (ms)",
+    unit: str = "ms",
 ) -> dict:
     """Build the JSON-serializable result document."""
     change_points: list[dict] = []
+    suffix = "_ms" if unit == "ms" else ""
     for attr in attributions:
         cp: ChangePoint = attr.change_point
         entry: dict = {
@@ -132,12 +142,12 @@ def to_json_dict(
             "timestamp": cp.timestamp,
             "time_utc": fmt_time(cp.timestamp),
             "direction": cp.direction,
-            "effect_ms": round(cp.effect_ms, 4),
+            f"effect{suffix}": round(cp.effect_ms, 4),
             "effect_pct": round(cp.effect_pct, 4),
             "confidence": round(cp.confidence, 4),
             "z": round(cp.z, 4),
-            "median_before_ms": round(cp.median_before, 4),
-            "median_after_ms": round(cp.median_after, 4),
+            f"median_before{suffix}": round(cp.median_before, 4),
+            f"median_after{suffix}": round(cp.median_after, 4),
             "persistence": round(cp.persistence, 4),
             "persist_count": cp.persist_count,
             "window": cp.window,
@@ -178,6 +188,7 @@ def to_json_dict(
         "tool": "blameshift",
         "version": _version(),
         "metric": metric_label,
+        **({"attribution_note": PROBABILITY_NOTE} if unit != "ms" else {}),
         "samples": len(points),
         "range_utc": [fmt_time(points[0].timestamp), fmt_time(points[-1].timestamp)],
         "change_points": change_points,
@@ -212,6 +223,7 @@ th { color: #475467; font-weight: 600; background: #f2f4f7; }
 tr:last-child td { border-bottom: none; }
 .regression { color: #b42318; font-weight: 600; }
 .improvement { color: #067647; font-weight: 600; }
+.increase, .decrease { color: #2e5eaa; font-weight: 600; }
 .card { border: 1px solid #e4e7ec; border-left: 4px solid #b42318; border-radius: 6px;
         padding: 12px 16px; margin: 12px 0; background: #ffffff; }
 .card h3 { margin: 0 0 6px; font-size: 0.95rem; }
@@ -223,7 +235,8 @@ svg { display: block; width: 100%; height: auto; background: #ffffff;
 """
 
 
-def _sparkline_svg(points: list[SeriesPoint], change_points: list[ChangePoint]) -> str:
+def _sparkline_svg(points: list[SeriesPoint], change_points: list[ChangePoint],
+                   unit: str = "ms") -> str:
     """Inline SVG of the series with change points marked. No JS."""
     width, height, pad = 920, 220, 12
     values = [p.value for p in points]
@@ -242,13 +255,14 @@ def _sparkline_svg(points: list[SeriesPoint], change_points: list[ChangePoint]) 
     )
     parts = [
         f'<svg viewBox="0 0 {width} {height}" role="img" '
-        f'aria-label="latency series with change points">',
+        f'aria-label="{"latency" if unit == "ms" else "probability"} series with change points">',
         f'<polyline points="{polyline}" fill="none" stroke="#2e5eaa" '
         f'stroke-width="1.2"/>',
     ]
     for cp in change_points:
         x = x_of(cp.index)
-        color = "#b42318" if cp.direction == "regression" else "#067647"
+        color = ("#b42318" if cp.direction == "regression" else
+                 "#067647" if cp.direction == "improvement" else "#2e5eaa")
         parts.append(
             f'<line x1="{x:.1f}" y1="{pad}" x2="{x:.1f}" y2="{height - pad}" '
             f'stroke="{color}" stroke-width="1" stroke-dasharray="4 3"/>'
@@ -259,11 +273,11 @@ def _sparkline_svg(points: list[SeriesPoint], change_points: list[ChangePoint]) 
         )
     parts.append(
         f'<text x="{pad}" y="{pad + 4}" font-size="10" fill="#98a2b3">'
-        f'{v_max:.0f}ms</text>'
+        f'{html.escape(format_value(v_max, unit))}</text>'
     )
     parts.append(
         f'<text x="{pad}" y="{height - 4}" font-size="10" fill="#98a2b3">'
-        f'{v_min:.0f}ms</text>'
+        f'{html.escape(format_value(v_min, unit))}</text>'
     )
     parts.append("</svg>")
     return "".join(parts)
@@ -274,6 +288,7 @@ def render_html(
     attributions: list[Attribution],
     *,
     metric_label: str = "latency (ms)",
+    unit: str = "ms",
     title: str = "blameshift report",
 ) -> str:
     """Render a single self-contained HTML report file."""
@@ -295,7 +310,7 @@ def render_html(
             f"<td>{n}</td>"
             f"<td>{esc(fmt_time(cp.timestamp))}</td>"
             f'<td class="{cp.direction}">{cp.direction}</td>'
-            f"<td>{cp.effect_ms:+.1f}ms</td>"
+            f"<td>{esc(format_value(cp.effect_ms, unit, signed=True))}</td>"
             f"<td>{_fmt_signed_pct(cp.effect_pct)}</td>"
             f"<td>{cp.confidence:.2f}</td>"
             f"<td>{suspect}</td>"
@@ -322,7 +337,8 @@ def render_html(
             f'<div class="card">'
             f"<h3>#{n} {esc(card.change_id)} — {esc(card.title)}</h3>"
             f'<div class="scores">{esc(card.kind)} by {esc(card.author)} &middot; '
-            f"median {card.median_before:.1f}ms &rarr; {card.median_after:.1f}ms "
+            f"median {esc(format_value(card.median_before, unit))} &rarr; "
+            f"{esc(format_value(card.median_after, unit))} "
             f"({_fmt_signed_pct(card.effect_pct)}) &middot; "
             f"score {card.score:.2f} (temporal {card.temporal_score:.2f} + "
             f"effect {card.effect_score:.2f} + "
@@ -342,8 +358,9 @@ def render_html(
         f"{esc(fmt_time(points[0].timestamp))} &rarr; "
         f"{esc(fmt_time(points[-1].timestamp))} &middot; "
         f"{esc(metric_label)} &middot; generated by blameshift {_version()}</div>",
+        (f"<p>{PROBABILITY_NOTE}</p>" if unit != "ms" else ""),
         "<h2>series</h2>",
-        _sparkline_svg(points, cps),
+        _sparkline_svg(points, cps, unit),
         f"<h2>change points ({len(cps)})</h2>",
         table,
     ]
@@ -369,6 +386,7 @@ def render_pr_comment(
     series_path: str,
     changes_path: str,
     metric_label: str = "latency (ms)",
+    unit: str = "ms",
 ) -> str:
     """Render a markdown PR comment: change points, blame, evidence cards.
 
@@ -377,10 +395,14 @@ def render_pr_comment(
     other than this run's inputs.
     """
     lines: list[str] = []
-    lines.append("### blameshift: latency change-point triage")
+    name = "latency" if unit == "ms" else "probability"
+    lines.append(f"### blameshift: {name} change-point triage")
     lines.append("")
+    if unit != "ms":
+        lines.extend([PROBABILITY_NOTE, ""])
     cps = [a.change_point for a in attributions]
     regressions = [cp for cp in cps if cp.direction == "regression"]
+    regression_count = f"({len(regressions)} regression(s)) " if unit == "ms" else ""
 
     if not cps:
         lines.append(
@@ -390,7 +412,7 @@ def render_pr_comment(
     else:
         lines.append(
             f"Detected **{len(cps)} change point(s)** "
-            f"({len(regressions)} regression(s)) in "
+            f"{regression_count}in "
             f"{len(points)} samples, {fmt_time(points[0].timestamp)} -> "
             f"{fmt_time(points[-1].timestamp)}:"
         )
@@ -410,7 +432,7 @@ def render_pr_comment(
                 suspect = "-"
             lines.append(
                 f"| {n} | {fmt_time(cp.timestamp)} | {cp.direction} | "
-                f"{cp.effect_ms:+.1f}ms | {_fmt_signed_pct(cp.effect_pct)} | "
+                f"{format_value(cp.effect_ms, unit, signed=True)} | {_fmt_signed_pct(cp.effect_pct)} | "
                 f"{cp.confidence:.2f} | {suspect} |"
             )
         lines.append("")
@@ -419,8 +441,8 @@ def render_pr_comment(
             cp = attr.change_point
             lines.append(
                 f"**Change point {n}** — {fmt_time(cp.timestamp)} "
-                f"({cp.direction}, median {cp.median_before:.1f}ms -> "
-                f"{cp.median_after:.1f}ms, z={cp.z:.1f}, "
+                f"({cp.direction}, median {format_value(cp.median_before, unit)} -> "
+                f"{format_value(cp.median_after, unit)}, z={cp.z:.1f}, "
                 f"persistence {cp.persist_count}/{cp.window})"
             )
             if attr.card is not None:

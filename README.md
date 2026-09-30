@@ -109,7 +109,8 @@ pipeline, not a benchmark of real-world accuracy.
 
 ## Input formats
 
-**Series CSV**: header `timestamp,value`, one latency sample (ms) per row.
+**Series CSV**: header `timestamp,value`, one latency sample (ms) per row
+by default, or a YES midpoint in [0, 1] with `--metric probability`.
 `timestamp` is epoch seconds or ISO-8601.
 
 ```csv
@@ -127,6 +128,38 @@ timestamp,value
 ```
 
 ## How it works
+
+### pmwatch probability series
+
+[pmwatch](https://github.com/raultinajeroo/pmwatch) exports one market's
+live order-book midpoints without requiring settlement:
+
+```bash
+# In the pmwatch checkout:
+uv run pmwatch export --db observations.db --format blameshift \
+  --venue kalshi --market-id MARKET_ID --out market.csv
+# In the blameshift checkout, using that CSV and an event log:
+uv run blameshift run --series market.csv --changes events.json \
+  --metric probability --json shifts.json --html shifts.html
+```
+
+`events.json` uses the Changes JSON schema above; record actual news or
+release times, or use `[]` to leave shifts unattributed. Probability mode
+validates the [0, 1] range, labels directions **increase/decrease**, and
+ranks preceding events for both directions. Terminal, HTML, JSON, and
+Markdown output preserve probability units. JSON uses `effect`,
+`median_before`, and `median_after` instead of the latency-specific `*_ms`
+keys. An effect of `0.04` is four percentage points of YES probability;
+`effect_pct` remains the relative percentage change from the prior median.
+
+Event rankings describe temporal association, not evidence that a headline
+caused a move. `--fail-on-regression` is only valid for latency mode.
+The detector still measures windows in **samples**: pmwatch deduplicates
+unchanged books, so samples need not be evenly spaced. Inspect collection
+gaps before interpreting a shift. No real-market accuracy claim follows
+from the synthetic integration tests.
+
+### Detection and attribution
 
 Detection is a robust two-window scan with a CUSUM confirmation. A split
 point slides through the series with `window` (default 25) samples on each
@@ -196,13 +229,15 @@ can't always tell them apart near the threshold).
 }
 ```
 
-`attribution` is `null` for improvements, and `{"unattributed": "..."}` when
-no change was recorded in the lookback window.
+In latency mode, `attribution` is `null` for improvements. Probability
+mode ranks events for both directions. Either mode uses
+`{"unattributed": "..."}` when no eligible event was recorded in the window.
 
 ## Configuration
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `--metric` | latency | `latency` in ms or `probability` in [0, 1] |
 | `--window` | 25 | samples on each side of a scanned split |
 | `--z-threshold` | 6.0 | robust z-score needed to open a candidate |
 | `--min-run` | 10 | post-shift samples that must stay on the shifted side |

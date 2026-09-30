@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 
 from . import __version__
 from .blame import attribute
@@ -45,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--series", required=True, help="path to series CSV (timestamp,value)")
     run.add_argument("--changes", required=True, help="path to changes JSON")
+    run.add_argument("--metric", choices=["latency", "probability"], default="latency",
+                     help="latency in ms (default) or YES order-book midpoint in [0, 1]")
     run.add_argument("--json", dest="json_out", help="also write a JSON report to this path")
     run.add_argument("--html", dest="html_out", help="also write a single-file HTML report to this path")
     run.add_argument("--window", type=int, default=25, help="scan window size n (default 25)")
@@ -103,8 +106,16 @@ def _cmd_simulate(args: argparse.Namespace) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    probability = args.metric == "probability"
+    unit = "" if probability else "ms"
+    display = {"metric_label": "YES probability (order-book mid)" if probability
+               else "latency (ms)", "unit": unit}
     try:
+        if probability and args.fail_on_regression:
+            raise InputError("--fail-on-regression applies only to --metric latency")
         points = load_series_csv(args.series)
+        if probability and any(not 0 <= point.value <= 1 for point in points):
+            raise InputError(f"{args.series}: probability values must be in [0, 1]")
         events = load_changes_json(args.changes)
         if len(points) < 2 * args.window:
             raise InputError(
@@ -119,6 +130,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
             min_run=args.min_run,
             k=args.cusum_k,
         )
+        if probability:
+            change_points = [replace(cp, direction="increase" if cp.effect_ms > 0
+                                     else "decrease") for cp in change_points]
     except (InputError, ValueError) as exc:
         print(f"blameshift: error: {exc}", file=sys.stderr)
         return 2
@@ -126,8 +140,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if not events:
         print(
             f"blameshift: note: {args.changes} records no changes; any "
-            "regression will be unattributed. Record deploys/commits/config "
-            "edits in the changes file to get blame attribution.",
+            "shift eligible for attribution will be unattributed. "
+            "Record events in the changes file to rank temporal associations.",
             file=sys.stderr,
         )
 
@@ -136,16 +150,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
         events,
         lookback_hours=args.lookback_hours,
         tau_hours=args.tau_hours,
+        unit=unit,
     )
 
-    print(render_terminal(points, attributions))
+    print(render_terminal(points, attributions, **display))
 
     if args.json_out:
-        doc = to_json_dict(points, attributions)
+        doc = to_json_dict(points, attributions, **display)
         write_json(doc, args.json_out)
         print(f"\nwrote {args.json_out}")
     if args.html_out:
-        write_html(render_html(points, attributions), args.html_out)
+        write_html(render_html(points, attributions, **display), args.html_out)
         print(f"wrote {args.html_out}")
     if args.pr_comment_out:
         comment = render_pr_comment(
@@ -153,6 +168,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             attributions,
             series_path=args.series,
             changes_path=args.changes,
+            **display,
         )
         with open(args.pr_comment_out, "w", encoding="utf-8") as fh:
             fh.write(comment + "\n")
